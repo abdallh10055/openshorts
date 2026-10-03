@@ -18,8 +18,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Build backend
-        working-directory: ./openshorts-main
-        run: docker build -t openshorts-backend -f Dockerfile .
+        run: docker build -t openshorts-backend .
       
       - name: Start backend
         run: |
