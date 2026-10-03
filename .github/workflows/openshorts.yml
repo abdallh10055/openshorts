@@ -1,0 +1,64 @@
+name: OpenShorts
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  openshorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build backend
+        working-directory: ./openshorts-main
+        run: docker build -t openshorts-backend -f Dockerfile .
+      
+      - name: Start backend
+        run: |
+          docker run -d --name openshorts-backend \
+            -p 8000:8000 \
+            -e GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
+            openshorts-backend
+          sleep 15
+      
+      - name: Run health check
+        run: |
+          for i in $(seq 1 30); do
+            curl -s http://localhost:8000/health/ready && break
+            sleep 2
+          done
+      
+      - name: Install cloudflared
+        run: |
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo -S -p '' dpkg -i cloudflared.deb
+      
+      - name: Start tunnel
+        run: |
+          cloudflared tunnel --url http://localhost:8000 > tunnel_url.log 2>&1 &
+          sleep 10
+          cat tunnel_url.log
+      
+      - name: Get tunnel URL
+        run: |
+          TUNNEL_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' tunnel_url.log | head -1)
+          echo "OPENSHORTS_URL=$TUNNEL_URL" >> $GITHUB_OUTPUT
+          echo "OpenShorts URL: $TUNNEL_URL"
+        id: tunnel
+      
+      - name: Output URL
+        run: echo "OpenShorts is live at: ${{ steps.tunnel.outputs.OPENSHORTS_URL }}"
+      
+      - name: Keep alive
+        run: |
+          while docker ps | grep -q openshorts-backend; do
+            sleep 60
+          done
